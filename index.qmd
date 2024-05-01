@@ -2,10 +2,158 @@
 title: "hmcranford.github.io"
 ---
 
-This is a Quarto website.
-
-To learn more about Quarto websites visit <https://quarto.org/docs/websites>.
-
-```{r}
-1 + 1
+```{r-packages}
+library(conflicted)
+suppressPackageStartupMessages(library(tidymodels))
+tidymodels_prefer()
+suppressPackageStartupMessages(library(tidyverse))
+library(ggplot2)
+library(hrbrthemes)
+library(dplyr)
+library(tidyr)
+library(viridis)
+library(showtext)
+library(ggtext)
+library(waffle)
+library(sysfonts)
 ```
+
+```{r-CTN-datasets}
+# Bring in CTN Datasets
+everybody <- public.ctn0094data::everybody
+demographics <- public.ctn0094data::demographics
+randomization <- public.ctn0094data::randomization
+sex <- public.ctn0094data::sex
+fagerstrom <- public.ctn0094data::fagerstrom
+psychiatric <- public.ctn0094data::psychiatric
+tlfb <- public.ctn0094data::tlfb
+screening_date <- public.ctn0094data::screening_date
+```
+
+```{r-data-creation}
+# Create necessary datasets
+randomization <-
+  randomization |> rename("when_random"="when")
+
+first_randomization <-
+  randomization |>
+  filter(which == 1)
+
+randomized_project <-
+  left_join(
+    first_randomization,
+    everybody,
+    demographics,
+    by = "who",
+    relationship = "many-to-many"
+  )
+
+randomized_demo_project <-
+  left_join(randomized_project,
+            demographics,
+            by = "who",
+            relationship = "many-to-many") |>
+  subset(select = -which)
+smoking <-
+  left_join(randomized_demo_project,
+                     fagerstrom,
+                     by = "who",
+                     relationship = "many-to-many")
+smoking_df <-
+  smoking |>
+  filter(!is.na(per_day))|> # restrict 5 without smoking information
+  mutate(
+    smokestatus = case_when(
+      is_smoker == "No" ~ "0",
+      per_day == "10 OR LESS" ~ "1",
+      per_day == "11-20" ~ "2",
+      per_day == "21-30" ~ "3",
+      per_day == "31 OR MORE" ~ "4")
+    )|>
+  count(project, smokestatus)
+```
+```{r-fig1}
+# Figure 1
+## Loading Google fonts (https://fonts.google.com/)
+font_add_google("Bebas Neue", "title_font")
+font_add_google("Roboto Slab", "body_font")
+
+title_text <-"Count of Participants by Number of Cigarettes Smoked
+per Day by Clinical Trials Network (CTN) Trial Number"
+subtitle_text <-"(n=2,487)*"
+caption_text <-"*5 persons excluded due to missing smoking information.
+Graphic: Hannah Cranford | R/Medicine Data Challenge | Data: public.ctn0094data version 1.0.6"
+
+## Automatically use showtext to render text
+showtext_auto()
+
+smoking_df |>
+  mutate(project = fct_recode(
+    project,
+    "CTN-0027 \n (n=1,264*)" = "27",
+    "CTN-0030 \n (n=653)" = "30",
+    "CTN-0051 \n (n=570)" = "51"
+  )) |>
+  mutate(smokestatus = fct_recode(
+    smokestatus,
+    "<11"= "1",
+    "11-20" = "2",
+    "21-30" ="3",
+    "31+"="4",
+    "Non-smoker"= "0"
+  )) |>
+  mutate(
+    smokestatus = fct_relevel(
+      smokestatus,"Non-smoker", "<11", "11-20", "21-30",
+      "31+")) |>
+    ggplot(aes(fill = smokestatus, values = n)) +
+  geom_waffle(color = "white", size = .25, n_rows = 20, flip = TRUE) +
+  facet_wrap(~project, nrow = 1, strip.position = "bottom") +
+  scale_x_discrete() +
+  scale_y_continuous(labels = function(x) x * 20, # make this multiplyer the same as n_rows
+                     expand = c(0,0))+
+  MetBrewer::scale_fill_met_d("Isfahan2", direction=1)+
+  coord_equal()+
+  labs(title = title_text,
+       caption = caption_text
+         )+
+  theme_minimal()+
+  theme(
+    axis.title = element_blank(),
+    axis.text.x = element_text(
+      family = body_font, size=9),
+    axis.text.y = element_text(
+      family = body_font, size=9),
+    # Legend
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.spacing = unit(0.2, 'cm'),
+    legend.key.height= unit(0.2, 'cm'),
+    legend.key.width= unit(0.5, 'cm'),
+    legend.text = element_text(family = "body_font",
+                               size=9,
+                               face = 'plain',
+                               color = "grey10"),
+    # TITLE
+    plot.title.position = "plot",
+    plot.title = element_text(margin = margin(1, 0, 5, 0),
+                                 size = 16,
+                                 family = "title_font",
+                                 face = "bold",
+                                 hjust= 0.5
+                              ),
+    # Caption
+    plot.caption = element_text(family="body_font",
+                                face="plain",
+                                size=6,
+                                color="grey40",
+                                hjust=0.5,
+                                margin=margin(10,0,0,0)),
+
+    plot.background = element_rect(color="white", fill="white"),
+    plot.margin = margin(20, 40, 20, 40)
+
+    )
+
+```
+
